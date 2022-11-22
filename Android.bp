@@ -1,0 +1,48 @@
+cc_defaults {
+    name: "apkparser_defaults",
+    cflags: [
+        "-Wall",
+        "-Werror",
+        "-Wno-unused-parameter",
+    ],
+    cppflags: [
+        "-Wno-missing-field-initializers",
+        "-fno-exceptions",
+        "-fno-rtti",
+    ],
+    target: {
+        darwin: {
+            cflags: ["-D_DARWIN_UNLIMITED_STREAMS"],
+        },
+    },
+    header_libs: ["jni_headers", "libaapt2_headers", "libdexfile_headers"],
+    static_libs: [
+        "libaapt2",
+        "libandroidfw",
+        "libutils",
+        "liblog",
+        "libcutils",
+        "libexpat",
+        "libziparchive",
+        "libpng",
+        "libbase",
+        "libprotobuf-cpp-full",
+        "libz",
+        "libbuildversion",
+        "libidmap2_policies",
+
+        // dex
+        "libdexfile",
+    ],
+    stl: "libc++_static",
+}
+
+cc_binary_host {
+    name: "apkparser",
+    srcs: ["Main.cpp", "Apk.cpp"],
+    defaults: ["apkparser_defaults"],
+    use_version_lib: true,
+    dist: {
+        targets: ["apkparser_artifacts"],
+    },
+}
