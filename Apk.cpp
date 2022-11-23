@@ -2,11 +2,14 @@
 
 #include <ValueVisitor.h>
 #include <android-base/stringprintf.h>
+#include <androidfw/AssetManager.h>
 #include <dex/dex_file-inl.h>
 #include <dex/dex_file.h>
 #include <dex/dex_file_loader.h>
 #include <io/StringStream.h>
+#include <io/ZipArchive.h>
 #include <text/Printer.h>
+#include <utils/String8.h>
 
 using ::android::ConfigDescription;
 using ::android::base::StringPrintf;
@@ -14,100 +17,12 @@ using ::android::base::StringPrintf;
 namespace apkparser {
 
 class XmlPrinter : public aapt::xml::ConstVisitor {
+   private:
+    aapt::text::Printer* printer_;
+    const Apk* apk_;
+
    public:
-    explicit XmlPrinter(aapt::text::Printer* printer, const aapt::LoadedApk* loadedApk)
-        : printer_(printer), loadedApk_(loadedApk) {
-        // 将id和value对应存储到map
-        const ConfigDescription& config = DefaultConfig();
-        auto table = loadedApk_->GetResourceTable();
-        if (table) {
-            for (auto& package : table->packages) {
-                for (auto& type : package->types) {
-                    for (auto& entry : type->entries) {
-                        if (entry->id) {
-                            if (auto value = BestConfigValue(entry.get(), config)) {
-                                this->idValueMap_[entry->id.value()] = value;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    /*
-     * Retrieves a configuration value of the resource entry that best matches the specified
-     * configuration.
-     */
-    static aapt::Value* BestConfigValue(aapt::ResourceEntry* entry, const ConfigDescription& match) {
-        if (!entry) {
-            return nullptr;
-        }
-
-        // Determine the config that best matches the desired config
-        aapt::ResourceConfigValue* best_value = nullptr;
-        for (auto& value : entry->values) {
-            if (!value->config.match(match)) {
-                continue;
-            }
-
-            if (best_value != nullptr) {
-                if (!value->config.isBetterThan(best_value->config, &match)) {
-                    if (value->config.compare(best_value->config) != 0) {
-                        continue;
-                    }
-                }
-            }
-
-            best_value = value.get();
-        }
-
-        // The entry has no values
-        if (!best_value) {
-            return nullptr;
-        }
-
-        return best_value->value.get();
-    }
-
-    aapt::Value* FindValueById(const aapt::ResourceId& res_id) {
-        if (!this->idValueMap_.empty()) {
-            auto it = this->idValueMap_.find(res_id.id);
-            if (it != this->idValueMap_.end()) {
-                return it->second;
-            }
-        }
-        return nullptr;
-    }
-
-    /** Creates a default configuration used to retrieve resources. */
-    static ConfigDescription DefaultConfig() {
-        ConfigDescription config;
-        config.orientation = android::ResTable_config::ORIENTATION_PORT;
-        config.density = android::ResTable_config::DENSITY_MEDIUM;
-        config.sdkVersion = 10000;  // Very high.
-        config.screenWidthDp = 320;
-        config.screenHeightDp = 480;
-        config.smallestScreenWidthDp = 320;
-        config.screenLayout |= android::ResTable_config::SCREENSIZE_NORMAL;
-        return config;
-    }
-
-    /** Attempts to resolve the reference to a non-reference value. */
-    aapt::Value* ResolveReference(aapt::Reference* ref) {
-        const int kMaxIterations = 40;
-        int i = 0;
-        while (ref && ref->id && i++ < kMaxIterations) {
-            if (auto value = FindValueById(ref->id.value())) {
-                if (aapt::ValueCast<aapt::Reference>(value)) {
-                    ref = aapt::ValueCast<aapt::Reference>(value);
-                } else {
-                    return value;
-                }
-            }
-        }
-        return nullptr;
-    }
+    explicit XmlPrinter(aapt::text::Printer* printer, const Apk* apk) : printer_(printer), apk_(apk){};
 
     void Visit(const aapt::xml::Element* el) override {
         // 解析命名空
@@ -133,11 +48,25 @@ class XmlPrinter : public aapt::xml::ConstVisitor {
             // 判断属性值是否为引用
             if (attr.compiled_value) {
                 aapt::Value* value = attr.compiled_value.get();
-                if (aapt::ValueCast<aapt::Reference>(value)) {
-                    value = ResolveReference(aapt::ValueCast<aapt::Reference>(value));
-                }
-                // 打印引用值
-                if (value != nullptr) {
+                if (aapt::ValueCast<aapt::Reference>(value) && (attr.name == "name" || attr.name == "label")) {
+                    // 将aapt::Reference转换为android::Res_value
+                    auto refValue = aapt::ValueCast<aapt::Reference>(value);
+                    android::Res_value resValue;
+                    resValue.dataType = android::Res_value::TYPE_REFERENCE;
+                    resValue.data = refValue->id.value().id;
+                    const android::ResTable& resTable = apk_->GetAssetManager()->getResources(false);
+                    // 解决引用
+                    std::string data;
+                    ssize_t block = resTable.resolveReference(&resValue, 0);
+                    if (block >= 0) {
+                        if (resValue.dataType == android::Res_value::TYPE_STRING) {
+                            size_t len;
+                            const char16_t* str = resTable.valueToString(&resValue, static_cast<size_t>(block), NULL, &len);
+                            data = str ? android::String8(str, len) : "";
+                        }
+                    }
+                    printer_->Print(StringPrintf(" %s=\"%s\"", attr_name.c_str(), data.c_str()));
+                } else {
                     if (aapt::ValueCast<aapt::String>(value)) {
                         printer_->Print(StringPrintf(" %s=\"%s\"", attr_name.data(), aapt::ValueCast<aapt::String>(value)->value->data()));
                     } else if (aapt::ValueCast<aapt::RawString>(value)) {
@@ -151,8 +80,6 @@ class XmlPrinter : public aapt::xml::ConstVisitor {
                     } else {
                         printer_->Print(StringPrintf(" %s=\"%s\"", attr_name.data(), attr.value.data()));
                     }
-                } else {
-                    printer_->Print(StringPrintf(" %s=\"%s\"", attr_name.data(), attr.value.data()));
                 }
             } else {
                 printer_->Print(StringPrintf(" %s=\"%s\"", attr_name.data(), attr.value.data()));
@@ -174,56 +101,87 @@ class XmlPrinter : public aapt::xml::ConstVisitor {
             printer_->Println(StringPrintf("</%s>", el->name.c_str()));
         }
     }
-
-   private:
-    aapt::text::Printer* printer_;
-    const aapt::LoadedApk* loadedApk_;
-    std::map<aapt::ResourceId, aapt::Value*> idValueMap_;
 };
 
 std::unique_ptr<Apk> Apk::LoadApkFromPath(const std::string& path) {
-    std::unique_ptr<Apk> apk = std::make_unique<Apk>();
-    aapt::StdErrDiagnostics diagnostics;
-    auto loadedApk = aapt::LoadedApk::LoadApkFromPath(path, &diagnostics);
-    if (!loadedApk) {
+    // 加载zip文件
+    aapt::Source source(path);
+    std::string error;
+    std::unique_ptr<aapt::io::ZipFileCollection> collection = aapt::io::ZipFileCollection::Create(path, &error);
+    if (!collection) {
+        std::cerr << "failed opening zip: " << error << std::endl;
         return {};
     }
-    apk->loadedApk = std::move(loadedApk);
-    return apk;
+    // 读取resources.arsc文件, 解析资源.
+    std::unique_ptr<android::AssetManager> assetManager(new android::AssetManager());
+    assetManager.get()->addAssetPath(android::String8(path.c_str()), NULL);
+    android::ResTable_config config;
+    memset(&config, 0, sizeof(android::ResTable_config));
+    config.language[0] = 'e';
+    config.language[1] = 'n';
+    config.country[0] = 'U';
+    config.country[1] = 'S';
+    config.orientation = android::ResTable_config::ORIENTATION_PORT;
+    config.density = android::ResTable_config::DENSITY_MEDIUM;
+    config.sdkVersion = 10000;  // Very high.
+    config.screenWidthDp = 320;
+    config.screenHeightDp = 480;
+    config.smallestScreenWidthDp = 320;
+    config.screenLayout |= android::ResTable_config::SCREENSIZE_NORMAL;
+    assetManager.get()->setConfiguration(config);
+    const android::ResTable& res = assetManager.get()->getResources(false);
+    if (res.getError() != android::NO_ERROR) {
+        std::cerr << "failed loading resource" << std::endl;
+        return {};
+    }
+    // 解析AndroidManifest.xml
+    aapt::io::IFile* manifest_file = collection->FindFile(kAndroidManifestPath);
+    if (manifest_file == nullptr) {
+        std::cerr << "failed loading " << kAndroidManifestPath << std::endl;
+        return {};
+    }
+    std::unique_ptr<aapt::io::IData> manifest_data = manifest_file->OpenAsData();
+    if (manifest_data == nullptr) {
+        std::cerr << "failed loading " << kAndroidManifestPath << std::endl;
+        return {};
+    }
+    std::unique_ptr<aapt::xml::XmlResource> manifest = aapt::xml::Inflate(manifest_data->data(), manifest_data->size(), &error);
+    if (manifest == nullptr) {
+        std::cerr << "failed to parse binary " << kAndroidManifestPath << ": " << error << std::endl;
+        return {};
+    }
+    std::unique_ptr<Apk> result(new Apk(std::move(collection), std::move(assetManager), std::move(manifest)));
+    return result;
 }
 
 std::unique_ptr<std::string> Apk::GetManifest() const {
-    const aapt::xml::XmlResource* manifest = this->loadedApk->GetManifest();
-    if (manifest == nullptr) {
-        std::cerr << "failed to find " << aapt::kAndroidManifestPath << std::endl;
-        return {};
-    }
     std::unique_ptr<std::string> result(new std::string());
     {  // printer 析构刷新缓冲区
         aapt::io::StringOutputStream sout(result.get());
         aapt::text::Printer printer(&sout);
-        XmlPrinter xml_visitor(&printer, this->loadedApk.get());
-        manifest->root->Accept(&xml_visitor);
+        XmlPrinter xml_visitor(&printer, this);
+        this->manifest_->root->Accept(&xml_visitor);
     }
     return result;
 }
 
 std::unique_ptr<std::list<std::string>> Apk::GetStrings() const {
-    // 获取资源文件的字符串池
-    const aapt::ResourceTable* table = this->loadedApk->GetResourceTable();
-    if (table == nullptr) {
-        std::cerr << "failed to find resource table" << std::endl;
+    // 读取字符串池
+    const android::ResStringPool* pool = assetManager_.get()->getResources(false).getTableStringBlock(0);
+    // 打印字符串
+    if (pool->getError() == android::NO_INIT) {
+        std::cerr << "string pool is unitialized" << std::endl;
+        return {};
+    } else if (pool->getError() != android::NO_ERROR) {
+        std::cerr << "string pool is corrupt/invalid." << std::endl;
         return {};
     }
-    // 遍历字符串池
     std::unique_ptr<std::list<std::string>> result(new std::list<std::string>());
-    for (const auto& entry : table->string_pool.strings()) {
-        if (entry.get()->value.empty()) {
-            continue;
+    for (size_t i = 0; i < pool->size(); i++) {
+        auto str = pool->string8ObjectAt(i);
+        if (str.has_value() && strlen(str.value().string()) > 0) {
+            result.get()->push_back(Apk::TrimString(str.value().string()));
         }
-        std::string str = Apk::TrimString(entry.get()->value);
-        if (str.empty()) continue;
-        result.get()->push_back(str);
     }
     return result;
 }
@@ -231,7 +189,7 @@ std::unique_ptr<std::list<std::string>> Apk::GetStrings() const {
 std::unique_ptr<std::pair<std::set<std::string>, std::set<std::string>>> Apk::ParseDexes() const {
     // 提取apk中的所有dex
     std::vector<aapt::io::IFile*> dexes;
-    auto collection = this->loadedApk->GetFileCollection();
+    auto collection = this->collection_.get();
     auto iter = collection->Iterator();
     while (iter.get()->HasNext()) {
         auto file = iter.get()->Next();
@@ -322,14 +280,14 @@ std::unique_ptr<nlohmann::json> Apk::DoAllTasks() const {
     // duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - now);
     // std::cout << "parse strings cost " << duration.count() << "ms" << std::endl;
     // 解析dexes
-    // now = std::chrono::system_clock::now();
+    // auto now = std::chrono::system_clock::now();
     auto dexes = this->ParseDexes();
     if (!dexes || dexes.get()->first.empty() || dexes.get()->second.empty()) {
         std::cerr << "parse dexes failed" << std::endl;
         return {};
     }
-    // end = std::chrono::system_clock::now();
-    // duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - now);
+    // auto end = std::chrono::system_clock::now();
+    // auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - now);
     // std::cout << "parse dexes cost " << duration.count() << "ms" << std::endl;
     // 构造json
     std::unique_ptr<nlohmann::json> result(new nlohmann::json());
