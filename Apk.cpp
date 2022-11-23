@@ -48,21 +48,32 @@ class XmlPrinter : public aapt::xml::ConstVisitor {
             // 判断属性值是否为引用
             if (attr.compiled_value) {
                 aapt::Value* value = attr.compiled_value.get();
-                if (aapt::ValueCast<aapt::Reference>(value) && (attr.name == "name" || attr.name == "label")) {
+                if (aapt::ValueCast<aapt::Reference>(value)) {
                     // 将aapt::Reference转换为android::Res_value
                     auto refValue = aapt::ValueCast<aapt::Reference>(value);
                     android::Res_value resValue;
                     resValue.dataType = android::Res_value::TYPE_REFERENCE;
                     resValue.data = refValue->id.value().id;
                     const android::ResTable& resTable = apk_->GetAssetManager()->getResources(false);
+                    // 判断packages中是否存在该资源
+                    auto resInPackages = [](const android::ResTable& resTable, const android::Res_value& resValue) {
+                        for (size_t i = 0; i < resTable.getBasePackageCount(); i++) {
+                            if (resTable.getBasePackageId(i) == (resValue.data >> 24)) {
+                                return true;
+                            }
+                        }
+                        return false;
+                    };
                     // 解决引用
                     std::string data;
-                    ssize_t block = resTable.resolveReference(&resValue, 0);
-                    if (block >= 0) {
-                        if (resValue.dataType == android::Res_value::TYPE_STRING) {
-                            size_t len;
-                            const char16_t* str = resTable.valueToString(&resValue, static_cast<size_t>(block), NULL, &len);
-                            data = str ? android::String8(str, len) : "";
+                    if (resInPackages(resTable, resValue)) {
+                        ssize_t block = resTable.resolveReference(&resValue, 0);
+                        if (block >= 0) {
+                            if (resValue.dataType == android::Res_value::TYPE_STRING) {
+                                size_t len;
+                                const char16_t* str = resTable.valueToString(&resValue, static_cast<size_t>(block), NULL, &len);
+                                data = str ? android::String8(str, len) : "";
+                            }
                         }
                     }
                     printer_->Print(StringPrintf(" %s=\"%s\"", attr_name.c_str(), data.c_str()));
