@@ -19,10 +19,10 @@ namespace apkparser {
 class XmlPrinter : public aapt::xml::ConstVisitor {
    private:
     aapt::text::Printer* printer_;
-    const Apk* apk_;
+    android::AssetManager* assetManager_;
 
    public:
-    explicit XmlPrinter(aapt::text::Printer* printer, const Apk* apk) : printer_(printer), apk_(apk){};
+    explicit XmlPrinter(aapt::text::Printer* printer, android::AssetManager* assetManager) : printer_(printer), assetManager_(assetManager){};
 
     void Visit(const aapt::xml::Element* el) override {
         // 解析命名空
@@ -55,7 +55,7 @@ class XmlPrinter : public aapt::xml::ConstVisitor {
                     android::Res_value resValue;
                     resValue.dataType = android::Res_value::TYPE_REFERENCE;
                     resValue.data = refValue->id.value().id;
-                    const android::ResTable& resTable = apk_->GetAssetManager()->getResources(false);
+                    const android::ResTable& resTable = assetManager_->getResources(false);
                     // 判断packages中是否存在该资源
                     auto resInPackages = [](const android::ResTable& resTable, const android::Res_value& resValue) {
                         for (size_t i = 0; i < resTable.getBasePackageCount(); i++) {
@@ -123,71 +123,78 @@ std::unique_ptr<Apk> Apk::LoadApkFromPath(const std::string& path) {
         std::cerr << "failed opening zip: " << error << std::endl;
         return {};
     }
-    // 读取resources.arsc文件, 解析资源.
+    // 创建AssetManager, 并加载resource.arsc
     std::unique_ptr<android::AssetManager> assetManager(new android::AssetManager());
-    assetManager.get()->addAssetPath(android::String8(path.c_str()), NULL);
-    android::ResTable_config config;
-    memset(&config, 0, sizeof(android::ResTable_config));
-    config.language[0] = 'e';
-    config.language[1] = 'n';
-    config.country[0] = 'U';
-    config.country[1] = 'S';
-    config.orientation = android::ResTable_config::ORIENTATION_PORT;
-    config.density = android::ResTable_config::DENSITY_MEDIUM;
-    config.sdkVersion = 10000;  // Very high.
-    config.screenWidthDp = 320;
-    config.screenHeightDp = 480;
-    config.smallestScreenWidthDp = 320;
-    config.screenLayout |= android::ResTable_config::SCREENSIZE_NORMAL;
-    assetManager.get()->setConfiguration(config);
-    const android::ResTable& res = assetManager.get()->getResources(false);
-    if (res.getError() != android::NO_ERROR) {
-        std::cerr << "failed loading resource" << std::endl;
-        return {};
+    android::ResTable_config* config = new android::ResTable_config();
+    memset(config, 0, sizeof(android::ResTable_config));
+    config->language[0] = 'e';
+    config->language[1] = 'n';
+    config->country[0] = 'U';
+    config->country[1] = 'S';
+    config->orientation = android::ResTable_config::ORIENTATION_PORT;
+    config->density = android::ResTable_config::DENSITY_MEDIUM;
+    config->sdkVersion = 10000;  // Very high.
+    config->screenWidthDp = 320;
+    config->screenHeightDp = 480;
+    config->smallestScreenWidthDp = 320;
+    config->screenLayout |= android::ResTable_config::SCREENSIZE_NORMAL;
+    assetManager.get()->setConfiguration(*config);
+    // addAssetPath 只要是规则的文件都能添加成功, 比如zip格式
+    // getResources(false) 如果没有资源,会先添加一个空资源包,然后返回空资源包, 所以不会得到ERROR
+    // 所以用getTableStringBlock函数判断是否有资源
+    if (!assetManager.get()->addAssetPath(android::String8(path.c_str()), NULL) ||
+        assetManager.get()->getResources(false).getError() != android::NO_ERROR ||
+        assetManager.get()->getResources(false).getTableStringBlock(0)->getError() != android::NO_ERROR) {
+        delete assetManager.release();
     }
-    // 解析AndroidManifest.xml
-    aapt::io::IFile* manifest_file = collection->FindFile(kAndroidManifestPath);
-    if (manifest_file == nullptr) {
-        std::cerr << "failed loading " << kAndroidManifestPath << std::endl;
-        return {};
-    }
-    std::unique_ptr<aapt::io::IData> manifest_data = manifest_file->OpenAsData();
-    if (manifest_data == nullptr) {
-        std::cerr << "failed loading " << kAndroidManifestPath << std::endl;
-        return {};
-    }
-    std::unique_ptr<aapt::xml::XmlResource> manifest = aapt::xml::Inflate(manifest_data->data(), manifest_data->size(), &error);
-    if (manifest == nullptr) {
-        std::cerr << "failed to parse binary " << kAndroidManifestPath << ": " << error << std::endl;
-        return {};
-    }
-    std::unique_ptr<Apk> result(new Apk(std::move(collection), std::move(assetManager), std::move(manifest)));
+    std::unique_ptr<Apk> result(new Apk(std::move(collection), std::move(assetManager)));
     return result;
 }
 
 std::unique_ptr<std::string> Apk::GetManifest() const {
     std::unique_ptr<std::string> result(new std::string());
-    {  // printer 析构刷新缓冲区
-        aapt::io::StringOutputStream sout(result.get());
-        aapt::text::Printer printer(&sout);
-        XmlPrinter xml_visitor(&printer, this);
-        this->manifest_->root->Accept(&xml_visitor);
+    // 判断是否解析了资源
+    if (!this->assetManager_) {
+        return result;
     }
+    // 解析AndroidManifest.xml
+    aapt::io::IFile* manifest_file = this->collection_.get()->FindFile(kAndroidManifestPath);
+    if (manifest_file == nullptr) {
+        return result;
+    }
+    std::unique_ptr<aapt::io::IData> manifest_data = manifest_file->OpenAsData();
+    if (manifest_data == nullptr) {
+        std::cerr << "failed to read " << kAndroidManifestPath << std::endl;
+        return {};
+    }
+    std::string error;
+    std::unique_ptr<aapt::xml::XmlResource> manifest = aapt::xml::Inflate(manifest_data->data(), manifest_data->size(), &error);
+    if (manifest == nullptr) {
+        std::cerr << "failed to parse " << kAndroidManifestPath << ": " << error << std::endl;
+        return {};
+    }
+    aapt::io::StringOutputStream sout(result.get());
+    aapt::text::Printer printer(&sout);  // 注意: 析构才会刷新缓存
+    XmlPrinter xml_visitor(&printer, this->assetManager_.get());
+    manifest->root->Accept(&xml_visitor);
     return result;
 }
 
 std::unique_ptr<std::list<std::string>> Apk::GetStrings() const {
+    std::unique_ptr<std::list<std::string>> result(new std::list<std::string>());
+    // 判断是否解析了资源
+    if (!this->assetManager_) {
+        return result;
+    }
     // 读取字符串池
     const android::ResStringPool* pool = assetManager_.get()->getResources(false).getTableStringBlock(0);
     // 打印字符串
     if (pool->getError() == android::NO_INIT) {
-        std::cerr << "string pool is unitialized" << std::endl;
-        return {};
+        return result;
     } else if (pool->getError() != android::NO_ERROR) {
         std::cerr << "string pool is corrupt/invalid." << std::endl;
         return {};
     }
-    std::unique_ptr<std::list<std::string>> result(new std::list<std::string>());
     for (size_t i = 0; i < pool->size(); i++) {
         auto str = pool->string8ObjectAt(i);
         if (str.has_value() && strlen(str.value().string()) > 0) {
