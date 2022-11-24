@@ -40,7 +40,7 @@ int main(int argc, char** argv) {
     if (command == "manifest") {
         // 解析manifest
         std::unique_ptr<std::string> manifest = apk->GetManifest();
-        if (!manifest || manifest.get()->empty()) {
+        if (!manifest) {
             std::cerr << "parse manifest failed" << std::endl;
             return -1;
         }
@@ -48,7 +48,7 @@ int main(int argc, char** argv) {
     } else if (command == "strings") {
         // 解析资源字符串
         auto strings = apk->GetStrings();
-        if (!strings || strings.get()->empty()) {
+        if (!strings) {
             std::cerr << "parse strings failed" << std::endl;
             return -1;
         }
@@ -58,7 +58,7 @@ int main(int argc, char** argv) {
     } else if (command == "dexes") {
         // 解析dexes
         auto dexes = apk->ParseDexes();
-        if (!dexes || dexes.get()->first.empty() || dexes.get()->second.empty()) {
+        if (!dexes) {
             std::cerr << "parse dexes failed" << std::endl;
             return -1;
         }
@@ -69,7 +69,7 @@ int main(int argc, char** argv) {
         std::cout << json.dump(4, ' ', false, nlohmann::detail::error_handler_t::ignore) << std::endl;
     } else if (command == "all") {
         auto json = apk->DoAllTasks();
-        if (!json || json.get()->empty()) {
+        if (!json) {
             std::cerr << "parse all failed" << std::endl;
             return -1;
         }
