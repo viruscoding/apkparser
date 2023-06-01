@@ -45,6 +45,7 @@ class XmlPrinter : public aapt::xml::ConstVisitor {
             } else {
                 attr_name = attr.namespace_uri + ":" + attr.name;
             }
+            std::string attr_value = attr.value;
             // 判断属性值是否为引用
             if (attr.compiled_value) {
                 aapt::Value* value = attr.compiled_value.get();
@@ -65,36 +66,35 @@ class XmlPrinter : public aapt::xml::ConstVisitor {
                         return false;
                     };
                     // 解决引用
-                    std::string data;
                     if (resInPackages(resTable, resValue)) {
                         ssize_t block = resTable.resolveReference(&resValue, 0);
                         if (block >= 0) {
                             if (resValue.dataType == android::Res_value::TYPE_STRING) {
                                 size_t len;
                                 const char16_t* str = resTable.valueToString(&resValue, static_cast<size_t>(block), NULL, &len);
-                                data = str ? android::String8(str, len) : "";
+                                attr_value = str ? android::String8(str, len) : "";
                             }
                         }
                     }
-                    printer_->Print(StringPrintf(" %s=\"%s\"", attr_name.c_str(), data.c_str()));
                 } else {
+                    aapt::io::StringOutputStream sout(&attr_value);
+                    aapt::text::Printer p(&sout);
                     if (aapt::ValueCast<aapt::String>(value)) {
-                        printer_->Print(StringPrintf(" %s=\"%s\"", attr_name.data(), aapt::ValueCast<aapt::String>(value)->value->data()));
+                        attr_value = *(aapt::ValueCast<aapt::String>(value)->value)->data();
                     } else if (aapt::ValueCast<aapt::RawString>(value)) {
-                        printer_->Print(StringPrintf(" %s=\"%s\"", attr_name.data(), aapt::ValueCast<aapt::RawString>(value)->value->data()));
-                    } else if (aapt::ValueCast<aapt::StyledString>(value)) {
-                        printer_->Print(StringPrintf(" %s=\"%s\"", attr_name.data(), aapt::ValueCast<aapt::StyledString>(value)->value.operator*().value.data()));
-                    } else if (aapt::ValueCast<aapt::FileReference>(value)) {
-                        printer_->Print(StringPrintf(" %s=\"%s\"", attr_name.data(), aapt::ValueCast<aapt::FileReference>(value)->path.operator*().data()));
+                        attr_value = *(aapt::ValueCast<aapt::RawString>(value)->value)->data();
                     } else if (aapt::ValueCast<aapt::BinaryPrimitive>(value)) {
-                        printer_->Print(StringPrintf(" %s=\"%s\"", attr_name.data(), std::to_string(aapt::ValueCast<aapt::BinaryPrimitive>(value)->value.data).data()));
-                    } else {
-                        printer_->Print(StringPrintf(" %s=\"%s\"", attr_name.data(), attr.value.data()));
+                        aapt::ValueCast<aapt::BinaryPrimitive>(value)->PrettyPrint(&p);
                     }
                 }
-            } else {
-                printer_->Print(StringPrintf(" %s=\"%s\"", attr_name.data(), attr.value.data()));
             }
+            // 参考mobsf,替换字符串中的`“`为`&quot;`
+            std::string::size_type pos = 0;
+            while ((pos = attr_value.find("\"", pos)) != std::string::npos) {
+                attr_value.replace(pos, 1, "&quot;");
+                pos += 6;
+            }
+            printer_->Print(StringPrintf(" %s=\"%s\"", attr_name.data(), android::ResTable::normalizeForOutput(attr_value.data()).c_str()));
         }
         if (el->children.empty()) {
             printer_->Println("/>");
