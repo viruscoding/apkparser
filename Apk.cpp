@@ -218,7 +218,6 @@ std::unique_ptr<std::pair<std::set<std::string>, std::set<std::string>>> Apk::Pa
     // 解析dex
     std::unique_ptr<std::pair<std::set<std::string>, std::set<std::string>>> result(new std::pair<std::set<std::string>, std::set<std::string>>);
     for (auto&& file : dexes) {
-        file->OpenAsData();
         std::unique_ptr<aapt::io::IData> data = file->OpenAsData();
         if (data == nullptr || data->size() < 4) {
             continue;
