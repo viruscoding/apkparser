@@ -98,11 +98,17 @@ class XmlPrinter : public aapt::xml::ConstVisitor {
                     sout.Flush();
                 }
             }
-            // 参考mobsf,替换字符串中的`“`为`&quot;`
+            // xml转义字符, 替换字符串中的`“`为`&quot;`
             std::string::size_type pos = 0;
             while ((pos = attr_value.find("\"", pos)) != std::string::npos) {
                 attr_value.replace(pos, 1, "&quot;");
                 pos += 6;
+            }
+            // 替换`&`为`&amp;`
+            pos = 0;
+            while ((pos = attr_value.find("&", pos)) != std::string::npos) {
+                attr_value.replace(pos, 1, "&amp;");
+                pos += 5;
             }
             printer_->Print(StringPrintf(" %s=\"%s\"", attr_name.data(), android::ResTable::normalizeForOutput(attr_value.data()).c_str()));
         }
@@ -137,10 +143,10 @@ std::unique_ptr<Apk> Apk::LoadApkFromPath(const std::string& path) {
     std::unique_ptr<android::AssetManager> assetManager(new android::AssetManager());
     android::ResTable_config* config = new android::ResTable_config();
     memset(config, 0, sizeof(android::ResTable_config));
-    config->language[0] = 'e';
-    config->language[1] = 'n';
-    config->country[0] = 'U';
-    config->country[1] = 'S';
+    config->language[0] = 'z';
+    config->language[1] = 'h';
+    config->country[0] = 'C';
+    config->country[1] = 'N';
     config->orientation = android::ResTable_config::ORIENTATION_PORT;
     config->density = android::ResTable_config::DENSITY_MEDIUM;
     config->sdkVersion = 10000;  // Very high.
