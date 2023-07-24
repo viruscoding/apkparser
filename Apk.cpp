@@ -44,51 +44,111 @@ class XmlPrinter : public aapt::xml::ConstVisitor {
 
     std::map<std::string, std::string> GetDisplayNames() { return displayNames_; }
 
-    std::string resolveReference(const android::ResTable& resTable, android::Res_value value, std::string* outError) {
-        // 判断资源对应的package是否存在
-        auto resPackagExist = [](const android::ResTable& resTable, const android::Res_value& resValue) {
-            for (size_t i = 0; i < resTable.getBasePackageCount(); i++) {
-                if (resTable.getBasePackageId(i) == (resValue.data >> 24)) {
-                    return true;
+    std::string resolveAttribute(const aapt::xml::Attribute& attr, std::string* outError) {
+        // 资源条目的值没有映射到android::ResTable_entry(即:是内嵌到xml中的值). 直接返回
+        if (!attr.compiled_value) {
+            return attr.value;
+        }
+        aapt::Value* value = attr.compiled_value.get();
+        std::string attr_value;
+        if (aapt::ValueCast<aapt::String>(value)) {  // in AndroidManifest.xml stringPool
+            attr_value = *(aapt::ValueCast<aapt::String>(value)->value)->data();
+        } else if (aapt::ValueCast<aapt::RawString>(value)) {  // in AndroidManifest.xml stringPool
+            attr_value = *(aapt::ValueCast<aapt::RawString>(value)->value)->data();
+        } else if (aapt::ValueCast<aapt::BinaryPrimitive>(value)) {  // 表示其它的android::Res_value.
+            aapt::io::StringOutputStream sout(&attr_value);
+            aapt::text::Printer p(&sout);
+            aapt::ValueCast<aapt::BinaryPrimitive>(value)->PrettyPrint(&p);
+            sout.Flush();
+        } else if (aapt::ValueCast<aapt::Reference>(value)) {  // 引用其它资源
+            auto ref = aapt::ValueCast<aapt::Reference>(value);
+            // 先将attr_value设置为引用id:
+            // aapt::io::StringOutputStream sout(&attr_value);
+            // aapt::text::Printer p(&sout);
+            // ref->PrettyPrint(&p);
+            // sout.Flush();
+            if (!ref->id || !ref->id.value().is_valid()) {
+                if (outError != NULL) {
+                    *outError = "reference id invalid";
                 }
+                return "";
             }
-            return false;
-        };
-        if (!resPackagExist(resTable, value)) {
-            if (outError != NULL) {
-                *outError = "resources`s package not found.";
+            // 转换成android::Res_value
+            android::Res_value resValue;
+            resValue.dataType = android::Res_value::TYPE_REFERENCE;
+            resValue.data = ref->id.value().id;
+            // 开始解决引用
+            if (!assetManager_) {
+                if (outError != NULL) {
+                    *outError = "asset manager is null";
+                }
+                return "";
             }
-            return "";
-        }
-        // 处理引用
-        ssize_t block = resTable.resolveReference(&value, 0);
-        if (block < 0) {
-            if (outError != NULL) {
-                *outError = "attribute value reference does not exist";
+            const android::ResTable& resTable = assetManager_->getResources(false);
+            if (resTable.getError() != android::NO_ERROR) {
+                if (outError != NULL) {
+                    *outError = "resTable has err:" + android::statusToString(resTable.getError());
+                }
+                return "";
             }
-            return "";
-        }
+            // 判断资源对应的package是否存在
+            auto resPackagExist = [](const android::ResTable& resTable, const android::Res_value& resValue) {
+                for (size_t i = 0; i < resTable.getBasePackageCount(); i++) {
+                    if (resTable.getBasePackageId(i) == (resValue.data >> 24)) {
+                        return true;
+                    }
+                }
+                return false;
+            };
+            if (!resPackagExist(resTable, resValue)) {
+                if (outError != NULL) {
+                    *outError = "resource`s package not exist";
+                }
+                return "";
+            }
+            // 处理引用
+            ssize_t block = resTable.resolveReference(&resValue, 0);
+            if (block < 0) {
+                if (outError != NULL) {
+                    *outError = "attribute value reference does not exist";
+                }
+                return "";
+            }
+            if (resValue.dataType != android::Res_value::TYPE_STRING) {
+                if (outError != NULL) {
+                    *outError = "attribute is not a string value";
+                }
+                return "";
+            }
 
-        if (value.dataType != android::Res_value::TYPE_STRING) {
-            if (outError != NULL) {
-                *outError = "attribute is not a string value";
-            }
-            return "";
+            size_t len;
+            const char16_t* str = resTable.valueToString(&resValue, static_cast<size_t>(block), NULL, &len);
+            attr_value = str ? android::String8(str, len).c_str() : "";
         }
-
-        size_t len;
-        const char16_t* str = resTable.valueToString(&value, static_cast<size_t>(block), NULL, &len);
-        return str ? android::String8(str, len).c_str() : "";
+        return attr_value;
     }
 
-    std::map<std::string, std::string> getApplicationLabels(const android::ResTable& resTable, android::Res_value value, std::string* outError) {
+    std::map<std::string, std::string> getApplicationLabels(const aapt::xml::Attribute& attr, std::string* outError) {
         std::map<std::string, std::string> displayNames;
+        if (!assetManager_) {
+            if (outError != NULL) {
+                *outError = "asset manager is null";
+            }
+            return displayNames;
+        }
+        const android::ResTable& resTable = assetManager_->getResources(false);
+        if (resTable.getError() != android::NO_ERROR) {
+            if (outError != NULL) {
+                *outError = "resTable has err:" + android::statusToString(resTable.getError());
+            }
+            return displayNames;
+        }
         android::Vector<android::String8> locales;
         resTable.getLocales(&locales);
         for (size_t i = 0; i < locales.size(); i++) {
             const char* localeStr = locales[i].string();
             assetManager_->setConfiguration(config_, localeStr != NULL ? localeStr : "");
-            std::string llabel = resolveReference(resTable, value, outError);
+            std::string llabel = resolveAttribute(attr, outError);
             if (llabel != "") {
                 if (localeStr == NULL || strlen(localeStr) == 0) {
                     displayNames["application-label"] = android::ResTable::normalizeForOutput(llabel.c_str()).string();
@@ -123,46 +183,9 @@ class XmlPrinter : public aapt::xml::ConstVisitor {
             } else {
                 attr_name = attr.namespace_uri + ":" + attr.name;
             }
-            std::string attr_value = attr.value;
-            // 判断属性值是否为引用
-            if (attr.compiled_value) {
-                aapt::Value* value = attr.compiled_value.get();
-                if (aapt::ValueCast<aapt::Reference>(value)) {
-                    auto ref = aapt::ValueCast<aapt::Reference>(value);
-                    // 先将attr_value设置为引用id
-                    aapt::io::StringOutputStream sout(&attr_value);
-                    aapt::text::Printer p(&sout);
-                    ref->PrettyPrint(&p);
-                    sout.Flush();
-                    if (ref->id && ref->id.value().is_valid()) {
-                        // 转换成android::Res_value
-                        android::Res_value resValue;
-                        resValue.dataType = android::Res_value::TYPE_REFERENCE;
-                        resValue.data = ref->id.value().id;
-                        // 解决引用
-                        if (assetManager_) {
-                            const android::ResTable& resTable = assetManager_->getResources(false);
-                            if (resTable.getError() == android::NO_ERROR) {
-                                std::string data = resolveReference(resTable, resValue, NULL);
-                                attr_value = data == "" ? attr_value : data;
-                                if (el->name == "application" && attr.name == "label") {  // 解析显示的应用名称
-                                    displayNames_ = getApplicationLabels(resTable, resValue, NULL);
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    aapt::io::StringOutputStream sout(&attr_value);
-                    aapt::text::Printer p(&sout);
-                    if (aapt::ValueCast<aapt::String>(value)) {
-                        attr_value = *(aapt::ValueCast<aapt::String>(value)->value)->data();
-                    } else if (aapt::ValueCast<aapt::RawString>(value)) {
-                        attr_value = *(aapt::ValueCast<aapt::RawString>(value)->value)->data();
-                    } else if (aapt::ValueCast<aapt::BinaryPrimitive>(value)) {
-                        aapt::ValueCast<aapt::BinaryPrimitive>(value)->PrettyPrint(&p);
-                    }
-                    sout.Flush();
-                }
+            std::string attr_value = resolveAttribute(attr, NULL);
+            if (el->name == "application" && attr.name == "label") {
+                displayNames_ = getApplicationLabels(attr, NULL);
             }
             // xml转义字符, 替换字符串中的`“`为`&quot;`
             std::string::size_type pos = 0;
