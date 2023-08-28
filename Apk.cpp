@@ -17,14 +17,15 @@ using ::android::base::StringPrintf;
 namespace apkparser {
 
 class XmlPrinter : public aapt::xml::ConstVisitor {
-   private:
+private:
     aapt::text::Printer* printer_;
     android::AssetManager* assetManager_;
     android::ResTable_config config_;
     std::map<std::string, std::string> displayNames_;
 
-   public:
-    explicit XmlPrinter(aapt::text::Printer* printer, android::AssetManager* assetManager) : printer_(printer), assetManager_(assetManager) {
+public:
+    explicit XmlPrinter(aapt::text::Printer* printer, android::AssetManager* assetManager)
+          : printer_(printer), assetManager_(assetManager) {
         android::ResTable_config config;
         memset(&config, 0, sizeof(android::ResTable_config));
         config.language[0] = 'z';
@@ -33,7 +34,7 @@ class XmlPrinter : public aapt::xml::ConstVisitor {
         config.country[1] = 'N';
         config.orientation = android::ResTable_config::ORIENTATION_PORT;
         config.density = android::ResTable_config::DENSITY_MEDIUM;
-        config.sdkVersion = 10000;  // Very high.
+        config.sdkVersion = 10000; // Very high.
         config.screenWidthDp = 320;
         config.screenHeightDp = 480;
         config.smallestScreenWidthDp = 320;
@@ -51,16 +52,16 @@ class XmlPrinter : public aapt::xml::ConstVisitor {
         }
         aapt::Value* value = attr.compiled_value.get();
         std::string attr_value;
-        if (aapt::ValueCast<aapt::String>(value)) {  // in AndroidManifest.xml stringPool
+        if (aapt::ValueCast<aapt::String>(value)) { // in AndroidManifest.xml stringPool
             attr_value = *(aapt::ValueCast<aapt::String>(value)->value)->data();
-        } else if (aapt::ValueCast<aapt::RawString>(value)) {  // in AndroidManifest.xml stringPool
+        } else if (aapt::ValueCast<aapt::RawString>(value)) { // in AndroidManifest.xml stringPool
             attr_value = *(aapt::ValueCast<aapt::RawString>(value)->value)->data();
-        } else if (aapt::ValueCast<aapt::BinaryPrimitive>(value)) {  // 表示其它的android::Res_value.
+        } else if (aapt::ValueCast<aapt::BinaryPrimitive>(value)) { // 表示其它的android::Res_value.
             aapt::io::StringOutputStream sout(&attr_value);
             aapt::text::Printer p(&sout);
             aapt::ValueCast<aapt::BinaryPrimitive>(value)->PrettyPrint(&p);
             sout.Flush();
-        } else if (aapt::ValueCast<aapt::Reference>(value)) {  // 引用其它资源
+        } else if (aapt::ValueCast<aapt::Reference>(value)) { // 引用其它资源
             auto ref = aapt::ValueCast<aapt::Reference>(value);
             // 先将attr_value设置为引用id:
             // aapt::io::StringOutputStream sout(&attr_value);
@@ -92,7 +93,8 @@ class XmlPrinter : public aapt::xml::ConstVisitor {
                 return "";
             }
             // 判断资源对应的package是否存在
-            auto resPackagExist = [](const android::ResTable& resTable, const android::Res_value& resValue) {
+            auto resPackagExist = [](const android::ResTable& resTable,
+                                     const android::Res_value& resValue) {
                 for (size_t i = 0; i < resTable.getBasePackageCount(); i++) {
                     if (resTable.getBasePackageId(i) == (resValue.data >> 24)) {
                         return true;
@@ -122,13 +124,15 @@ class XmlPrinter : public aapt::xml::ConstVisitor {
             }
 
             size_t len;
-            const char16_t* str = resTable.valueToString(&resValue, static_cast<size_t>(block), NULL, &len);
+            const char16_t* str =
+                    resTable.valueToString(&resValue, static_cast<size_t>(block), NULL, &len);
             attr_value = str ? android::String8(str, len).c_str() : "";
         }
         return attr_value;
     }
 
-    std::map<std::string, std::string> getApplicationLabels(const aapt::xml::Attribute& attr, std::string* outError) {
+    std::map<std::string, std::string> getApplicationLabels(const aapt::xml::Attribute& attr,
+                                                            std::string* outError) {
         std::map<std::string, std::string> displayNames;
         if (!assetManager_) {
             if (outError != NULL) {
@@ -151,10 +155,12 @@ class XmlPrinter : public aapt::xml::ConstVisitor {
             std::string llabel = resolveAttribute(attr, outError);
             if (llabel != "") {
                 if (localeStr == NULL || strlen(localeStr) == 0) {
-                    displayNames["application-label"] = android::ResTable::normalizeForOutput(llabel.c_str()).string();
+                    displayNames["application-label"] =
+                            android::ResTable::normalizeForOutput(llabel.c_str()).string();
                 } else {
                     std::string key = StringPrintf("application-label-%s", localeStr);
-                    displayNames[key] = android::ResTable::normalizeForOutput(llabel.c_str()).string();
+                    displayNames[key] =
+                            android::ResTable::normalizeForOutput(llabel.c_str()).string();
                 }
             }
         }
@@ -169,7 +175,8 @@ class XmlPrinter : public aapt::xml::ConstVisitor {
             if (decl.prefix.empty()) {
                 printer_->Print(StringPrintf(" xmlns=\"%s\"", decl.uri.c_str()));
             } else {
-                printer_->Print(StringPrintf(" xmlns:%s=\"%s\"", decl.prefix.c_str(), decl.uri.c_str()));
+                printer_->Print(
+                        StringPrintf(" xmlns:%s=\"%s\"", decl.prefix.c_str(), decl.uri.c_str()));
             }
         }
         // 解析属性
@@ -199,7 +206,9 @@ class XmlPrinter : public aapt::xml::ConstVisitor {
                 attr_value.replace(pos, 1, "&amp;");
                 pos += 5;
             }
-            printer_->Print(StringPrintf(" %s=\"%s\"", attr_name.data(), android::ResTable::normalizeForOutput(attr_value.data()).c_str()));
+            printer_->Print(
+                    StringPrintf(" %s=\"%s\"", attr_name.data(),
+                                 android::ResTable::normalizeForOutput(attr_value.data()).c_str()));
         }
         if (el->children.empty()) {
             printer_->Println("/>");
@@ -223,7 +232,8 @@ std::unique_ptr<Apk> Apk::LoadApkFromPath(const std::string& path) {
     // 加载zip文件
     aapt::Source source(path);
     std::string error;
-    std::unique_ptr<aapt::io::ZipFileCollection> collection = aapt::io::ZipFileCollection::Create(path, &error);
+    std::unique_ptr<aapt::io::ZipFileCollection> collection =
+            aapt::io::ZipFileCollection::Create(path, &error);
     if (!collection) {
         std::cerr << "failed opening zip: " << error << std::endl;
         return {};
@@ -235,15 +245,18 @@ std::unique_ptr<Apk> Apk::LoadApkFromPath(const std::string& path) {
     // 所以用getTableStringBlock函数判断是否有资源
     if (!assetManager.get()->addAssetPath(android::String8(path.c_str()), NULL) ||
         assetManager.get()->getResources(false).getError() != android::NO_ERROR ||
-        assetManager.get()->getResources(false).getTableStringBlock(0)->getError() != android::NO_ERROR) {
+        assetManager.get()->getResources(false).getTableStringBlock(0)->getError() !=
+                android::NO_ERROR) {
         delete assetManager.release();
     }
     std::unique_ptr<Apk> result(new Apk(std::move(collection), std::move(assetManager)));
     return result;
 }
 
-std::unique_ptr<std::pair<std::string, std::map<std::string, std::string>>> Apk::GetManifest() const {
-    std::unique_ptr<std::pair<std::string, std::map<std::string, std::string>>> result(new std::pair<std::string, std::map<std::string, std::string>>);
+std::unique_ptr<std::pair<std::string, std::map<std::string, std::string>>> Apk::GetManifest()
+        const {
+    std::unique_ptr<std::pair<std::string, std::map<std::string, std::string>>> result(
+            new std::pair<std::string, std::map<std::string, std::string>>);
     aapt::io::IFile* manifest_file = this->collection_.get()->FindFile(kAndroidManifestPath);
     if (manifest_file == nullptr) {
         return result;
@@ -254,7 +267,8 @@ std::unique_ptr<std::pair<std::string, std::map<std::string, std::string>>> Apk:
         return {};
     }
     std::string error;
-    std::unique_ptr<aapt::xml::XmlResource> manifest = aapt::xml::Inflate(manifest_data->data(), manifest_data->size(), &error);
+    std::unique_ptr<aapt::xml::XmlResource> manifest =
+            aapt::xml::Inflate(manifest_data->data(), manifest_data->size(), &error);
     if (manifest == nullptr) {
         std::cerr << "failed to parse " << kAndroidManifestPath << ": " << error << std::endl;
         return {};
@@ -275,7 +289,8 @@ std::unique_ptr<std::list<std::string>> Apk::GetStrings() const {
         return result;
     }
     // 读取字符串池
-    const android::ResStringPool* pool = assetManager_.get()->getResources(false).getTableStringBlock(0);
+    const android::ResStringPool* pool =
+            assetManager_.get()->getResources(false).getTableStringBlock(0);
     // 打印字符串
     if (pool->getError() == android::NO_INIT) {
         return result;
@@ -304,7 +319,8 @@ std::unique_ptr<std::pair<std::set<std::string>, std::set<std::string>>> Apk::Pa
         }
     }
     // 解析dex
-    std::unique_ptr<std::pair<std::set<std::string>, std::set<std::string>>> result(new std::pair<std::set<std::string>, std::set<std::string>>);
+    std::unique_ptr<std::pair<std::set<std::string>, std::set<std::string>>> result(
+            new std::pair<std::set<std::string>, std::set<std::string>>);
     for (auto&& file : dexes) {
         std::unique_ptr<aapt::io::IData> data = file->OpenAsData();
         if (data == nullptr || data->size() < 4) {
@@ -319,15 +335,11 @@ std::unique_ptr<std::pair<std::set<std::string>, std::set<std::string>>> Apk::Pa
             continue;
         }
         std::string error_msg;
-        const art::DexFile::Header* dex_header = reinterpret_cast<const art::DexFile::Header*>(base);
-        std::unique_ptr<const art::DexFile> dexFile = dexFileLoader.Open(base,
-                                                                         size,
-                                                                         location,
-                                                                         dex_header->checksum_,
-                                                                         /*oat_dex_file=*/nullptr,
-                                                                         false,
-                                                                         false,
-                                                                         &error_msg);
+        const art::DexFile::Header* dex_header =
+                reinterpret_cast<const art::DexFile::Header*>(base);
+        std::unique_ptr<const art::DexFile> dexFile =
+                dexFileLoader.Open(base, size, location, dex_header->checksum_,
+                                   /*oat_dex_file=*/nullptr, false, false, &error_msg);
         if (dexFile == nullptr) {
             continue;
         }
@@ -350,7 +362,8 @@ std::unique_ptr<std::pair<std::set<std::string>, std::set<std::string>>> Apk::Pa
 
         // 遍历字符串
         for (uint32_t i = 0; i < dexFile->NumStringIds(); ++i) {
-            const char* str = dexFile->GetStringData(dexFile->GetStringId(art::dex::StringIndex(i)));
+            const char* str =
+                    dexFile->GetStringData(dexFile->GetStringId(art::dex::StringIndex(i)));
             if (str == nullptr || strlen(str) == 0) {
                 continue;
             }
@@ -406,4 +419,4 @@ std::unique_ptr<nlohmann::json> Apk::DoAllTasks() const {
     return result;
 }
 
-}  // namespace apkparser
+} // namespace apkparser
