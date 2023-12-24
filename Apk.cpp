@@ -50,29 +50,37 @@ class XmlPrinter : public aapt::xml::ConstVisitor {
             if (attr.compiled_value) {
                 aapt::Value* value = attr.compiled_value.get();
                 if (aapt::ValueCast<aapt::Reference>(value)) {
-                    auto refValue = aapt::ValueCast<aapt::Reference>(value);
-                    android::Res_value resValue;
-                    resValue.dataType = android::Res_value::TYPE_REFERENCE;
-                    resValue.data = refValue->id.value().id;
-                    // 判断资源对应的package是否存在
-                    auto resPackagExist = [](const android::ResTable& resTable, const android::Res_value& resValue) {
-                        for (size_t i = 0; i < resTable.getBasePackageCount(); i++) {
-                            if (resTable.getBasePackageId(i) == (resValue.data >> 24)) {
-                                return true;
+                    auto ref = aapt::ValueCast<aapt::Reference>(value);
+                    // 先将attr_value设置为引用id
+                    aapt::io::StringOutputStream sout(&attr_value);
+                    aapt::text::Printer p(&sout);
+                    ref->PrettyPrint(&p);
+                    sout.Flush();
+                    if (ref->id && ref->id.value().is_valid()) {
+                        // 转换成android::Res_value
+                        android::Res_value resValue;
+                        resValue.dataType = android::Res_value::TYPE_REFERENCE;
+                        resValue.data = ref->id.value().id;
+                        // 判断资源对应的package是否存在
+                        auto resPackagExist = [](const android::ResTable& resTable, const android::Res_value& resValue) {
+                            for (size_t i = 0; i < resTable.getBasePackageCount(); i++) {
+                                if (resTable.getBasePackageId(i) == (resValue.data >> 24)) {
+                                    return true;
+                                }
                             }
-                        }
-                        return false;
-                    };
-                    // 解决引用
-                    if (assetManager_) {
-                        const android::ResTable& resTable = assetManager_->getResources(false);
-                        if (resTable.getError() == android::NO_ERROR && resPackagExist(resTable, resValue)) {
-                            ssize_t block = resTable.resolveReference(&resValue, 0);
-                            if (block >= 0) {
-                                if (resValue.dataType == android::Res_value::TYPE_STRING) {
-                                    size_t len;
-                                    const char16_t* str = resTable.valueToString(&resValue, static_cast<size_t>(block), NULL, &len);
-                                    attr_value = str ? android::String8(str, len) : "";
+                            return false;
+                        };
+                        // 解决引用
+                        if (assetManager_) {
+                            const android::ResTable& resTable = assetManager_->getResources(false);
+                            if (resTable.getError() == android::NO_ERROR && resPackagExist(resTable, resValue)) {
+                                ssize_t block = resTable.resolveReference(&resValue, 0);
+                                if (block >= 0) {
+                                    if (resValue.dataType == android::Res_value::TYPE_STRING) {
+                                        size_t len;
+                                        const char16_t* str = resTable.valueToString(&resValue, static_cast<size_t>(block), NULL, &len);
+                                        attr_value = str ? android::String8(str, len).c_str() : attr_value;
+                                    }
                                 }
                             }
                         }
