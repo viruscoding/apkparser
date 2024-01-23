@@ -20,9 +20,87 @@ class XmlPrinter : public aapt::xml::ConstVisitor {
    private:
     aapt::text::Printer* printer_;
     android::AssetManager* assetManager_;
+    android::ResTable_config config_;
+    std::map<std::string, std::string> displayNames_;
 
    public:
-    explicit XmlPrinter(aapt::text::Printer* printer, android::AssetManager* assetManager) : printer_(printer), assetManager_(assetManager){};
+    explicit XmlPrinter(aapt::text::Printer* printer, android::AssetManager* assetManager) : printer_(printer), assetManager_(assetManager) {
+        android::ResTable_config config;
+        memset(&config, 0, sizeof(android::ResTable_config));
+        config.language[0] = 'z';
+        config.language[1] = 'h';
+        config.country[0] = 'C';
+        config.country[1] = 'N';
+        config.orientation = android::ResTable_config::ORIENTATION_PORT;
+        config.density = android::ResTable_config::DENSITY_MEDIUM;
+        config.sdkVersion = 10000;  // Very high.
+        config.screenWidthDp = 320;
+        config.screenHeightDp = 480;
+        config.smallestScreenWidthDp = 320;
+        config.screenLayout |= android::ResTable_config::SCREENSIZE_NORMAL;
+        config_ = config;
+        assetManager_->setConfiguration(config_);
+    }
+
+    std::map<std::string, std::string> GetDisplayNames() { return displayNames_; }
+
+    std::string resolveReference(const android::ResTable& resTable, android::Res_value value, std::string* outError) {
+        // 判断资源对应的package是否存在
+        auto resPackagExist = [](const android::ResTable& resTable, const android::Res_value& resValue) {
+            for (size_t i = 0; i < resTable.getBasePackageCount(); i++) {
+                if (resTable.getBasePackageId(i) == (resValue.data >> 24)) {
+                    return true;
+                }
+            }
+            return false;
+        };
+        if (!resPackagExist(resTable, value)) {
+            if (outError != NULL) {
+                *outError = "resources`s package not found.";
+            }
+            return "";
+        }
+        // 处理引用
+        ssize_t block = resTable.resolveReference(&value, 0);
+        if (block < 0) {
+            if (outError != NULL) {
+                *outError = "attribute value reference does not exist";
+            }
+            return "";
+        }
+
+        if (value.dataType != android::Res_value::TYPE_STRING) {
+            if (outError != NULL) {
+                *outError = "attribute is not a string value";
+            }
+            return "";
+        }
+
+        size_t len;
+        const char16_t* str = resTable.valueToString(&value, static_cast<size_t>(block), NULL, &len);
+        return str ? android::String8(str, len).c_str() : "";
+    }
+
+    std::map<std::string, std::string> getApplicationLabels(const android::ResTable& resTable, android::Res_value value, std::string* outError) {
+        std::map<std::string, std::string> displayNames;
+        android::Vector<android::String8> locales;
+        resTable.getLocales(&locales);
+        for (size_t i = 0; i < locales.size(); i++) {
+            const char* localeStr = locales[i].string();
+            assetManager_->setConfiguration(config_, localeStr != NULL ? localeStr : "");
+            std::string llabel = resolveReference(resTable, value, outError);
+            if (llabel != "") {
+                if (localeStr == NULL || strlen(localeStr) == 0) {
+                    displayNames["application-label"] = android::ResTable::normalizeForOutput(llabel.c_str()).string();
+                } else {
+                    std::string key = StringPrintf("application-label-%s", localeStr);
+                    displayNames[key] = android::ResTable::normalizeForOutput(llabel.c_str()).string();
+                }
+            }
+        }
+        assetManager_->setConfiguration(config_);
+        return displayNames;
+    }
 
     void Visit(const aapt::xml::Element* el) override {
         // 解析命名空
@@ -61,26 +139,14 @@ class XmlPrinter : public aapt::xml::ConstVisitor {
                         android::Res_value resValue;
                         resValue.dataType = android::Res_value::TYPE_REFERENCE;
                         resValue.data = ref->id.value().id;
-                        // 判断资源对应的package是否存在
-                        auto resPackagExist = [](const android::ResTable& resTable, const android::Res_value& resValue) {
-                            for (size_t i = 0; i < resTable.getBasePackageCount(); i++) {
-                                if (resTable.getBasePackageId(i) == (resValue.data >> 24)) {
-                                    return true;
-                                }
-                            }
-                            return false;
-                        };
                         // 解决引用
                         if (assetManager_) {
                             const android::ResTable& resTable = assetManager_->getResources(false);
-                            if (resTable.getError() == android::NO_ERROR && resPackagExist(resTable, resValue)) {
-                                ssize_t block = resTable.resolveReference(&resValue, 0);
-                                if (block >= 0) {
-                                    if (resValue.dataType == android::Res_value::TYPE_STRING) {
-                                        size_t len;
-                                        const char16_t* str = resTable.valueToString(&resValue, static_cast<size_t>(block), NULL, &len);
-                                        attr_value = str ? android::String8(str, len).c_str() : attr_value;
-                                    }
+                            if (resTable.getError() == android::NO_ERROR) {
+                                std::string data = resolveReference(resTable, resValue, NULL);
+                                attr_value = data == "" ? attr_value : data;
+                                if (el->name == "application" && attr.name == "label") {  // 解析显示的应用名称
+                                    displayNames_ = getApplicationLabels(resTable, resValue, NULL);
                                 }
                             }
                         }
@@ -141,20 +207,6 @@ std::unique_ptr<Apk> Apk::LoadApkFromPath(const std::string& path) {
     }
     // 创建AssetManager, 并加载resource.arsc
     std::unique_ptr<android::AssetManager> assetManager(new android::AssetManager());
-    android::ResTable_config* config = new android::ResTable_config();
-    memset(config, 0, sizeof(android::ResTable_config));
-    config->language[0] = 'z';
-    config->language[1] = 'h';
-    config->country[0] = 'C';
-    config->country[1] = 'N';
-    config->orientation = android::ResTable_config::ORIENTATION_PORT;
-    config->density = android::ResTable_config::DENSITY_MEDIUM;
-    config->sdkVersion = 10000;  // Very high.
-    config->screenWidthDp = 320;
-    config->screenHeightDp = 480;
-    config->smallestScreenWidthDp = 320;
-    config->screenLayout |= android::ResTable_config::SCREENSIZE_NORMAL;
-    assetManager.get()->setConfiguration(*config);
     // addAssetPath 只要是规则的文件都能添加成功, 比如zip格式
     // getResources(false) 如果没有资源,会先添加一个空资源包,然后返回空资源包, 所以不会得到ERROR
     // 所以用getTableStringBlock函数判断是否有资源
@@ -167,8 +219,8 @@ std::unique_ptr<Apk> Apk::LoadApkFromPath(const std::string& path) {
     return result;
 }
 
-std::unique_ptr<std::string> Apk::GetManifest() const {
-    std::unique_ptr<std::string> result(new std::string());
+std::unique_ptr<std::pair<std::string, std::map<std::string, std::string>>> Apk::GetManifest() const {
+    std::unique_ptr<std::pair<std::string, std::map<std::string, std::string>>> result(new std::pair<std::string, std::map<std::string, std::string>>);
     aapt::io::IFile* manifest_file = this->collection_.get()->FindFile(kAndroidManifestPath);
     if (manifest_file == nullptr) {
         return result;
@@ -184,11 +236,12 @@ std::unique_ptr<std::string> Apk::GetManifest() const {
         std::cerr << "failed to parse " << kAndroidManifestPath << ": " << error << std::endl;
         return {};
     }
-    aapt::io::StringOutputStream sout(result.get());
+    aapt::io::StringOutputStream sout(&result.get()->first);
     aapt::text::Printer printer(&sout);
     XmlPrinter xml_visitor(&printer, this->assetManager_.get());
     manifest->root->Accept(&xml_visitor);
     sout.Flush();
+    result.get()->second = xml_visitor.GetDisplayNames();
     return result;
 }
 
@@ -290,7 +343,7 @@ std::unique_ptr<std::pair<std::set<std::string>, std::set<std::string>>> Apk::Pa
 std::unique_ptr<nlohmann::json> Apk::DoAllTasks() const {
     // 解析manifest
     // auto now = std::chrono::system_clock::now();
-    std::unique_ptr<std::string> manifest = this->GetManifest();
+    auto manifest = this->GetManifest();
     if (!manifest) {
         std::cerr << "parse manifest failed" << std::endl;
         return {};
@@ -320,7 +373,8 @@ std::unique_ptr<nlohmann::json> Apk::DoAllTasks() const {
     // std::cout << "parse dexes cost " << duration.count() << "ms" << std::endl;
     // 构造json
     std::unique_ptr<nlohmann::json> result(new nlohmann::json());
-    result.get()->operator[]("manifest") = *manifest.get();
+    result.get()->operator[]("manifest") = manifest.get()->first;
+    result.get()->operator[]("displayNames") = manifest.get()->second;
     nlohmann::json resStrings;
     resStrings["strings"] = *strings.get();
     result.get()->operator[]("resources.arsc") = resStrings;
