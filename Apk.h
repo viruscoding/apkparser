@@ -14,22 +14,19 @@ constexpr static const char kApkResourceTablePath[] = "resources.arsc";
 constexpr static const char kAndroidManifestPath[] = "AndroidManifest.xml";
 
 class Apk {
-   private:
+private:
     std::unique_ptr<aapt::io::IFileCollection> collection_;
     std::unique_ptr<android::AssetManager> assetManager_;
 
-   public:
-    Apk(std::unique_ptr<aapt::io::IFileCollection> collection, std::unique_ptr<android::AssetManager> assetManager)
-        : collection_(std::move(collection)), assetManager_(std::move(assetManager)){};
+public:
+    Apk(std::unique_ptr<aapt::io::IFileCollection> collection,
+        std::unique_ptr<android::AssetManager> assetManager)
+          : collection_(std::move(collection)), assetManager_(std::move(assetManager)){};
     ~Apk() = default;
 
-    android::AssetManager* GetAssetManager() const {
-        return assetManager_.get();
-    }
+    android::AssetManager* GetAssetManager() const { return assetManager_.get(); }
 
-    aapt::io::IFileCollection* GetFileCollection() const {
-        return collection_.get();
-    }
+    aapt::io::IFileCollection* GetFileCollection() const { return collection_.get(); }
 
     /// @brief zip格式加载apk、即使resources.arsc、AndroidManifest.xml不存在，也可以加载
     /// @param path apk路径
@@ -62,6 +59,6 @@ class Apk {
     }
 };
 
-}  // namespace apkparser
+} // namespace apkparser
 
-#endif  // APKPARSER_APK_H
+#endif // APKPARSER_APK_H
