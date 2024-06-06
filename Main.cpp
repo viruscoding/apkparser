@@ -8,10 +8,10 @@ using ::android::StringPiece;
 void printUseage() {
     std::cout << "Usage: apkparser <command> <apk_path>" << std::endl;
     std::cout << "Commands:" << std::endl;
-    std::cout << "\tmanifest: print the manifest of the apk" << std::endl;
-    std::cout << "\tstrings: print the resourdes strings of the apk" << std::endl;
-    std::cout << "\tdexes: json print the dexes of the apk" << std::endl;
-    std::cout << "\tall: json print the manifest, strings and dexes of the apk " << std::endl;
+    std::cout << "\tmanifest\tprint manifest" << std::endl;
+    std::cout << "\tstrings\t\tprint resources strings" << std::endl;
+    std::cout << "\tdexes\t\tprint dexes" << std::endl;
+    std::cout << "\tall\t\tprint all" << std::endl;
 }
 
 /**
