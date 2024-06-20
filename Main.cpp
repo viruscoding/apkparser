@@ -5,6 +5,15 @@
 
 using ::android::StringPiece;
 
+void printUseage() {
+    std::cout << "Usage: apkparser <command> <apk_path>" << std::endl;
+    std::cout << "Commands:" << std::endl;
+    std::cout << "\tmanifest: print the manifest of the apk" << std::endl;
+    std::cout << "\tstrings: print the resourdes strings of the apk" << std::endl;
+    std::cout << "\tdexes: json print the dexes of the apk" << std::endl;
+    std::cout << "\tall: json print the manifest, strings and dexes of the apk " << std::endl;
+}
+
 /**
  * 1. 解析manifest
  * 2. 解析资源字符串
@@ -17,7 +26,7 @@ int main(int argc, char** argv) {
         args.push_back(argv[i]);
     }
     if (args.size() != 2) {
-        std::cerr << "no command or path specified" << std::endl;
+        printUseage();
         return -1;
     }
     std::string command = args[0].to_string();
@@ -66,7 +75,7 @@ int main(int argc, char** argv) {
         }
         std::cout << json.get()->dump(4, ' ', false, nlohmann::detail::error_handler_t::ignore) << std::endl;
     } else {
-        std::cerr << "unknown command: " << command << std::endl;
+        printUseage();
         return -1;
     }
     return 0;

@@ -334,7 +334,9 @@ std::unique_ptr<nlohmann::json> Apk::DoAllTasks() const {
     // 构造json
     std::unique_ptr<nlohmann::json> result(new nlohmann::json());
     result.get()->operator[]("manifest") = *manifest.get();
-    result.get()->operator[]("resources.arsc") = *strings.get();
+    nlohmann::json resStrings;
+    resStrings["strings"] = *strings.get();
+    result.get()->operator[]("resources.arsc") = resStrings;
     result.get()->operator[]("dex_classes") = dexes.get()->first;
     result.get()->operator[]("dex_strings") = dexes.get()->second;
     return result;
