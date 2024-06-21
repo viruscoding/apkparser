@@ -243,12 +243,13 @@ std::unique_ptr<Apk> Apk::LoadApkFromPath(const std::string& path) {
     // addAssetPath 只要是规则的文件都能添加成功, 比如zip格式
     // getResources(false) 如果没有资源,会先添加一个空资源包,然后返回空资源包, 所以不会得到ERROR
     // 所以用getTableStringBlock函数判断是否有资源
-    if (!assetManager.get()->addAssetPath(android::String8(path.c_str()), NULL) ||
-        assetManager.get()->getResources(false).getError() != android::NO_ERROR ||
-        assetManager.get()->getResources(false).getTableStringBlock(0)->getError() !=
-                android::NO_ERROR) {
-        delete assetManager.release();
-    }
+    // if (!assetManager.get()->addAssetPath(android::String8(path.c_str()), NULL) ||
+    //     assetManager.get()->getResources(false).getError() != android::NO_ERROR ||
+    //     assetManager.get()->getResources(false).getTableStringBlock(0)->getError() !=
+    //             android::NO_ERROR) {
+    //     delete assetManager.release();
+    // }
+    assetManager.get()->addAssetPath(android::String8(path.c_str()), NULL);
     std::unique_ptr<Apk> result(new Apk(std::move(collection), std::move(assetManager)));
     return result;
 }
@@ -292,7 +293,7 @@ std::unique_ptr<std::list<std::string>> Apk::GetStrings() const {
     const android::ResStringPool* pool =
             assetManager_.get()->getResources(false).getTableStringBlock(0);
     // 打印字符串
-    if (pool->getError() == android::NO_INIT) {
+    if (pool->getError() == android::NO_INIT) { // 没有arsc
         return result;
     } else if (pool->getError() != android::NO_ERROR) {
         std::cerr << "string pool is corrupt/invalid." << std::endl;
