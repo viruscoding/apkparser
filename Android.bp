@@ -1,6 +1,6 @@
 cc_defaults {
-    name: "apkparser_defaults",
-    cflags: [
+    name: "apkparser_build_defaults",
+        cflags: [
         "-Wall",
         "-Werror",
         "-Wno-unused-parameter",
@@ -15,6 +15,11 @@ cc_defaults {
             cflags: ["-D_DARWIN_UNLIMITED_STREAMS"],
         },
     },
+}
+
+cc_defaults {
+    name: "apkparser_defaults",
+    defaults: ["apkparser_build_defaults"],
     header_libs: ["jni_headers", "libaapt2_headers", "libdexfile_headers"],
     static_libs: [
         "libaapt2",
