@@ -243,11 +243,15 @@ std::unique_ptr<Apk> Apk::LoadApkFromPath(const std::string& path) {
     // addAssetPath 只要是规则的文件都能添加成功, 比如zip格式
     // getResources(false) 如果没有资源,会先添加一个空资源包,然后返回空资源包, 所以不会得到ERROR
     // 所以用getTableStringBlock函数判断是否有资源
-    if (!assetManager.get()->addAssetPath(android::String8(path.c_str()), NULL) ||
-        assetManager.get()->getResources(false).getError() != android::NO_ERROR ||
-        assetManager.get()->getResources(false).getTableStringBlock(0)->getError() !=
-                android::NO_ERROR) {
-        std::cerr << "failed to load resource.arsc" << std::endl;
+    // if (!assetManager.get()->addAssetPath(android::String8(path.c_str()), NULL) ||
+    //     assetManager.get()->getResources(false).getError() != android::NO_ERROR ||
+    //     assetManager.get()->getResources(false).getTableStringBlock(0)->getError() !=
+    //             android::NO_ERROR) {
+    //     std::cerr << "failed to load resource.arsc" << std::endl;
+    //     return {};
+    // }
+    if (!assetManager.get()->addAssetPath(android::String8(path.c_str()), NULL)) {
+        std::cerr << "failed to load resource" << std::endl;
         return {};
     }
     std::unique_ptr<Apk> result(new Apk(std::move(collection), std::move(assetManager)));
@@ -262,6 +266,16 @@ std::unique_ptr<std::pair<std::string, std::map<std::string, std::string>>> Apk:
     if (manifest_file == nullptr) {
         return result;
     }
+    // 判断是否存在resource.arsc, 如果不存在返回空对象
+    const android::ResStringPool* pool =
+            assetManager_.get()->getResources(false).getTableStringBlock(0);
+    if (pool->getError() == android::NO_INIT) { // 没有arsc
+        return result;
+    } else if (pool->getError() != android::NO_ERROR) {
+        std::cerr << "string pool is corrupt/invalid." << std::endl;
+        return {};
+    }
+
     std::unique_ptr<aapt::io::IData> manifest_data = manifest_file->OpenAsData();
     if (manifest_data == nullptr) {
         std::cerr << "failed to read " << kAndroidManifestPath << std::endl;
@@ -285,11 +299,7 @@ std::unique_ptr<std::pair<std::string, std::map<std::string, std::string>>> Apk:
 
 std::unique_ptr<std::list<std::string>> Apk::GetStrings() const {
     std::unique_ptr<std::list<std::string>> result(new std::list<std::string>());
-    // 判断是否解析了资源
-    if (!this->assetManager_) {
-        return result;
-    }
-    // 读取字符串池
+    // 判断是否存在resource.arsc, 如果不存在返回空对象
     const android::ResStringPool* pool =
             assetManager_.get()->getResources(false).getTableStringBlock(0);
     // 打印字符串
