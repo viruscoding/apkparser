@@ -273,7 +273,7 @@ std::unique_ptr<nlohmann::json> Apk::DoAllTasks() const {
     // 解析manifest
     // auto now = std::chrono::system_clock::now();
     std::unique_ptr<std::string> manifest = this->GetManifest();
-    if (!manifest || manifest.get()->empty()) {
+    if (!manifest) {
         std::cerr << "parse manifest failed" << std::endl;
         return {};
     }
@@ -283,7 +283,7 @@ std::unique_ptr<nlohmann::json> Apk::DoAllTasks() const {
     // 解析资源字符串
     // now = std::chrono::system_clock::now();
     auto strings = this->GetStrings();
-    if (!strings || strings.get()->empty()) {
+    if (!strings) {
         std::cerr << "parse strings failed" << std::endl;
         return {};
     }
@@ -293,7 +293,7 @@ std::unique_ptr<nlohmann::json> Apk::DoAllTasks() const {
     // 解析dexes
     // auto now = std::chrono::system_clock::now();
     auto dexes = this->ParseDexes();
-    if (!dexes || dexes.get()->first.empty() || dexes.get()->second.empty()) {
+    if (!dexes) {
         std::cerr << "parse dexes failed" << std::endl;
         return {};
     }
