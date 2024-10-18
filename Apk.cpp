@@ -50,14 +50,12 @@ class XmlPrinter : public aapt::xml::ConstVisitor {
             if (attr.compiled_value) {
                 aapt::Value* value = attr.compiled_value.get();
                 if (aapt::ValueCast<aapt::Reference>(value)) {
-                    // 将aapt::Reference转换为android::Res_value
                     auto refValue = aapt::ValueCast<aapt::Reference>(value);
                     android::Res_value resValue;
                     resValue.dataType = android::Res_value::TYPE_REFERENCE;
                     resValue.data = refValue->id.value().id;
-                    const android::ResTable& resTable = assetManager_->getResources(false);
-                    // 判断packages中是否存在该资源
-                    auto resInPackages = [](const android::ResTable& resTable, const android::Res_value& resValue) {
+                    // 判断资源对应的package是否存在
+                    auto resPackagExist = [](const android::ResTable& resTable, const android::Res_value& resValue) {
                         for (size_t i = 0; i < resTable.getBasePackageCount(); i++) {
                             if (resTable.getBasePackageId(i) == (resValue.data >> 24)) {
                                 return true;
@@ -66,13 +64,16 @@ class XmlPrinter : public aapt::xml::ConstVisitor {
                         return false;
                     };
                     // 解决引用
-                    if (resInPackages(resTable, resValue)) {
-                        ssize_t block = resTable.resolveReference(&resValue, 0);
-                        if (block >= 0) {
-                            if (resValue.dataType == android::Res_value::TYPE_STRING) {
-                                size_t len;
-                                const char16_t* str = resTable.valueToString(&resValue, static_cast<size_t>(block), NULL, &len);
-                                attr_value = str ? android::String8(str, len) : "";
+                    if (assetManager_) {
+                        const android::ResTable& resTable = assetManager_->getResources(false);
+                        if (resTable.getError() == android::NO_ERROR && resPackagExist(resTable, resValue)) {
+                            ssize_t block = resTable.resolveReference(&resValue, 0);
+                            if (block >= 0) {
+                                if (resValue.dataType == android::Res_value::TYPE_STRING) {
+                                    size_t len;
+                                    const char16_t* str = resTable.valueToString(&resValue, static_cast<size_t>(block), NULL, &len);
+                                    attr_value = str ? android::String8(str, len) : "";
+                                }
                             }
                         }
                     }
@@ -86,6 +87,7 @@ class XmlPrinter : public aapt::xml::ConstVisitor {
                     } else if (aapt::ValueCast<aapt::BinaryPrimitive>(value)) {
                         aapt::ValueCast<aapt::BinaryPrimitive>(value)->PrettyPrint(&p);
                     }
+                    sout.Flush();
                 }
             }
             // 参考mobsf,替换字符串中的`“`为`&quot;`
@@ -153,11 +155,6 @@ std::unique_ptr<Apk> Apk::LoadApkFromPath(const std::string& path) {
 
 std::unique_ptr<std::string> Apk::GetManifest() const {
     std::unique_ptr<std::string> result(new std::string());
-    // 判断是否解析了资源
-    if (!this->assetManager_) {
-        return result;
-    }
-    // 解析AndroidManifest.xml
     aapt::io::IFile* manifest_file = this->collection_.get()->FindFile(kAndroidManifestPath);
     if (manifest_file == nullptr) {
         return result;
@@ -174,9 +171,10 @@ std::unique_ptr<std::string> Apk::GetManifest() const {
         return {};
     }
     aapt::io::StringOutputStream sout(result.get());
-    aapt::text::Printer printer(&sout);  // 注意: 析构才会刷新缓存
+    aapt::text::Printer printer(&sout);
     XmlPrinter xml_visitor(&printer, this->assetManager_.get());
     manifest->root->Accept(&xml_visitor);
+    sout.Flush();
     return result;
 }
 
