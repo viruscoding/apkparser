@@ -36,9 +36,9 @@ class Apk {
     /// @return 失败返回nullptr
     static std::unique_ptr<Apk> LoadApkFromPath(const std::string& path);
 
-    /// @brief 解析manifest
+    /// @brief 解析manifest 和 application-label
     /// @return 失败返回nullptr, 没有resources.arsc和AndroidManifest.xml返回空字符串
-    std::unique_ptr<std::string> GetManifest() const;
+    std::unique_ptr<std::pair<std::string, std::map<std::string, std::string>>> GetManifest() const;
 
     /// @brief 获取resource.arsc中的字符串池
     /// @return 失败返回nullptr, 没有resources.arsc或其中没有字符串,返回空字符串列表

@@ -39,12 +39,15 @@ int main(int argc, char** argv) {
     }
     if (command == "manifest") {
         // 解析manifest
-        std::unique_ptr<std::string> manifest = apk->GetManifest();
-        if (!manifest) {
+        auto result = apk->GetManifest();
+        if (!result) {
             std::cerr << "parse manifest failed" << std::endl;
             return -1;
         }
-        std::cout << *manifest.get() << std::endl;
+        nlohmann::json json;
+        json["manifest"] = result.get()->first;
+        json["displayNames"] = result.get()->second;
+        std::cout << json.dump(4, ' ', false, nlohmann::detail::error_handler_t::ignore) << std::endl;
     } else if (command == "strings") {
         // 解析资源字符串
         auto strings = apk->GetStrings();
