@@ -46,7 +46,7 @@ int main(int argc, char** argv) {
         }
         nlohmann::json json;
         json["manifest"] = result.get()->first;
-        json["displayNames"] = result.get()->second;
+        json["display_names"] = result.get()->second;
         std::cout << json.dump(4, ' ', false, nlohmann::detail::error_handler_t::ignore) << std::endl;
     } else if (command == "strings") {
         // 解析资源字符串
