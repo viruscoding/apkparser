@@ -92,6 +92,12 @@ cc_library_headers {
     host_supported: true,
     export_include_dirs: ["."],
 }
+
+// 同时在cc_library模块中添加以下内容
+cc_library {
+    visibility: ["//visibility:public"], // 增加这一行
+    ......
+}
 ```
 
 导出aapt2模块的headers
