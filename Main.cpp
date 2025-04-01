@@ -47,7 +47,8 @@ int main(int argc, char** argv) {
         nlohmann::json json;
         json["manifest"] = result.get()->first;
         json["display_names"] = result.get()->second;
-        std::cout << json.dump(4, ' ', false, nlohmann::detail::error_handler_t::ignore) << std::endl;
+        std::cout << json.dump(4, ' ', false, nlohmann::detail::error_handler_t::ignore)
+                  << std::endl;
     } else if (command == "strings") {
         // 解析资源字符串
         auto strings = apk->GetStrings();
@@ -69,14 +70,16 @@ int main(int argc, char** argv) {
         nlohmann::json json;
         json["dex_classes"] = dexes.get()->first;
         json["dex_strings"] = dexes.get()->second;
-        std::cout << json.dump(4, ' ', false, nlohmann::detail::error_handler_t::ignore) << std::endl;
+        std::cout << json.dump(4, ' ', false, nlohmann::detail::error_handler_t::ignore)
+                  << std::endl;
     } else if (command == "all") {
         auto json = apk->DoAllTasks();
         if (!json) {
             std::cerr << "parse all failed" << std::endl;
             return -1;
         }
-        std::cout << json.get()->dump(4, ' ', false, nlohmann::detail::error_handler_t::ignore) << std::endl;
+        std::cout << json.get()->dump(4, ' ', false, nlohmann::detail::error_handler_t::ignore)
+                  << std::endl;
     } else {
         printUseage();
         return -1;
