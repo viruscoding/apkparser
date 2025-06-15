@@ -22,16 +22,17 @@ private:
     android::AssetManager* assetManager_;
     android::ResTable_config config_;
     std::map<std::string, std::string> displayNames_;
+    std::map<std::string, std::string> namespace_uri_prefix_; // 记录uri和prefix的对应关系
 
 public:
     explicit XmlPrinter(aapt::text::Printer* printer, android::AssetManager* assetManager)
           : printer_(printer), assetManager_(assetManager) {
         android::ResTable_config config;
         memset(&config, 0, sizeof(android::ResTable_config));
-        config.language[0] = 'z';
-        config.language[1] = 'h';
-        config.country[0] = 'C';
-        config.country[1] = 'N';
+        config.language[0] = 'e';
+        config.language[1] = 'n';
+        config.country[0] = 'U';
+        config.country[1] = 'S';
         config.orientation = android::ResTable_config::ORIENTATION_PORT;
         config.density = android::ResTable_config::DENSITY_MEDIUM;
         config.sdkVersion = 10000; // Very high.
@@ -169,7 +170,7 @@ public:
     }
 
     void Visit(const aapt::xml::Element* el) override {
-        // 解析命名空
+        // 解析命名空间
         printer_->Print(StringPrintf("<%s", el->name.c_str()));
         for (const auto& decl : el->namespace_decls) {
             if (decl.prefix.empty()) {
@@ -177,6 +178,7 @@ public:
             } else {
                 printer_->Print(
                         StringPrintf(" xmlns:%s=\"%s\"", decl.prefix.c_str(), decl.uri.c_str()));
+                namespace_uri_prefix_[decl.uri] = decl.prefix;
             }
         }
         // 解析属性
@@ -188,7 +190,13 @@ public:
             } else if (attr.namespace_uri == "http://schemas.android.com/apk/res/android") {
                 attr_name = "android:" + attr.name;
             } else {
-                attr_name = attr.namespace_uri + ":" + attr.name;
+                attr_name = "unknow:" + attr.name;
+                for (const auto& pair : this->namespace_uri_prefix_) {
+                    if (pair.first.compare(attr.namespace_uri) == 0) {
+                        attr_name = pair.second + ":" + attr.name;
+                        break;
+                    }
+                }
             }
             std::string attr_value = resolveAttribute(attr, NULL);
             if (el->name == "application" && attr.name == "label") {
