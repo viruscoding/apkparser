@@ -2,6 +2,10 @@
 
 基于aapt2和libdexfile两个模块，封装一个命令行工具，用于解析apk中的资源和dex。
 
+## Todo list
+
+- 加速编译
+
 ## 功能
 
 - 解析manifest
