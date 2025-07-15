@@ -12,6 +12,7 @@ void printUseage() {
     std::cout << "\tstrings\t\tprint resources strings" << std::endl;
     std::cout << "\tdexes\t\tprint dexes" << std::endl;
     std::cout << "\tall\t\tprint all" << std::endl;
+    std::cout << "\ttest\t\tthis is a test for fix bug" << std::endl;
 }
 
 /**
